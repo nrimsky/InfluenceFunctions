@@ -1,0 +1,8 @@
+venv
+__pycache__
+*.ckpt
+*.pt 
+*.pth
+*.ipynb_checkpoints
+data
+results*
