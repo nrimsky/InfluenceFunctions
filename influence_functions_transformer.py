@@ -105,10 +105,9 @@ def get_query_grads(
     if len(query.shape) == 1:
         # Add batch dimension
         query = query.unsqueeze(0)
-    if len(target.shape) == 0:
         target = target.unsqueeze(0)
     output = model(query)
-    loss = t.nn.functional.cross_entropy(output[:, -1, :], target)
+    loss = autoregressive_loss(output, target)
     loss.backward()
     grads = []
     for block in mlp_blocks:

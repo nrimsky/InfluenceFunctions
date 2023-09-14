@@ -5,14 +5,17 @@ from torch.optim import Adam
 from torch.utils.data import Dataset
 import string
 from influence_functions_transformer import influence, InfluenceCalculable
+from random import sample
 
-d_model = 120
+d_model = 40
 n_heads = 4
-d_mlp = 256
+d_mlp = 128
 n_layers = 2
 vocab_size = 128
-dataset_length = 20
+dataset_length = 100
 sequence_length = 5
+lr = 0.002
+n_epochs = 1000
 
 
 def autoregressive_loss(output, target):
@@ -30,14 +33,12 @@ class CharPredictDataset(Dataset):
     def _generate_data(self, length):
         alphabets = string.ascii_lowercase
         numbers = [str(i % 10) for i in range(length)]
-        return "".join([alphabets[i] + numbers[i] for i in range(length)])
+        return "".join([alphabets[i%len(alphabets)] + numbers[i] for i in range(length)])
 
     def __len__(self):
         return len(self.data) - self.seq_length
 
     def __getitem__(self, idx):
-        if idx >= len(self):
-            raise IndexError("Index out of range")
         source_seq = self.data[idx : idx + self.seq_length]
         return t.tensor(
             [ord(c) for c in source_seq[:-1]], dtype=t.long
@@ -136,7 +137,7 @@ class TransformerBlock(t.nn.Module):
 
 
 class DecoderTransformer(t.nn.Module):
-    def __init__(self, d_model, n_heads, d_mlp, n_layers, vocab_size, max_seq_len=5):
+    def __init__(self, d_model, n_heads, d_mlp, n_layers, vocab_size, max_seq_len):
         super().__init__()
         self.d_model = d_model
         self.n_heads = n_heads
@@ -164,7 +165,7 @@ class DecoderTransformer(t.nn.Module):
         return Y
 
 
-def train_loop(model, data_loader, optimizer, num_epochs=2):
+def train_loop(model, data_loader, optimizer, num_epochs):
     model.train()
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
     model.to(device)
@@ -185,18 +186,18 @@ def train_loop(model, data_loader, optimizer, num_epochs=2):
             print(f"Epoch {epoch + 1}/{num_epochs}, Loss: {avg_loss:.4f}")
 
 
-def train_char_predict(n_epochs=500):
+def train_char_predict():
     small_transformer = DecoderTransformer(
         d_model=d_model,
         n_heads=n_heads,
         d_mlp=d_mlp,
         n_layers=n_layers,
         vocab_size=vocab_size,
-        max_seq_len=5,
+        max_seq_len=sequence_length,
     )
     dataset = CharPredictDataset(length=dataset_length, seq_length=sequence_length)
     data_loader = DataLoader(dataset, batch_size=32, shuffle=True)
-    optimizer = Adam(small_transformer.parameters(), lr=0.001)
+    optimizer = Adam(small_transformer.parameters(), lr=lr)
     train_loop(small_transformer, data_loader, optimizer, num_epochs=n_epochs)
     t.save(small_transformer.state_dict(), "small_transformer.pth")
 
@@ -204,27 +205,23 @@ def train_char_predict(n_epochs=500):
 def calc_influence(model_path):
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
     train_dataset = CharPredictDataset(length=dataset_length, seq_length=sequence_length)
-    model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size)
+    train_subset = t.utils.data.Subset(
+        train_dataset, sample(range(len(train_dataset)), 100)
+    )
+    model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length)
     model.load_state_dict(t.load(model_path))
     model.to(device)
     model.eval()
 
-    def encode(string):
-        return t.tensor([ord(c) for c in string], dtype=t.long).to(device)
-
-    queries = [
-        (encode("c2d3"), encode("e")),
-        (encode("6h7i"), encode("8")),
-        (encode("0b1c"), encode("2")),
-        (encode("4f5g"), encode("6")),
-        (encode("5g6h"), encode("7")),
-    ]
+    queries = t.utils.data.Subset(
+        train_dataset, sample(range(len(train_dataset)), 10)
+    )
 
     all_top_training_samples, all_top_influences = influence(
         model,
         [b.mlp for b in model.blocks],
         queries,
-        train_dataset,
+        train_subset,
         device,
     )
 
@@ -242,18 +239,12 @@ def calc_influence(model_path):
         for s, i in zip(top_samples, top_influences):
             s = s.item()
             print(
-                f"Sample: {decode(train_dataset[s][0])} {decode(train_dataset[s][1])} Influence: {i}"
+                f"Sample: {decode(train_subset[s][0])} {decode(train_subset[s][1])} Influence: {i}"
             )
 
 
 def run_model(model_path):
-    d_model = 120
-    n_heads = 4
-    d_mlp = 256
-    n_layers = 2
-    vocab_size = 128
-
-    model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size)
+    model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length)
     model.load_state_dict(t.load(model_path))
 
     model.eval()
@@ -264,8 +255,8 @@ def run_model(model_path):
         user_input = input("Enter a string: ")
         if user_input == "exit":
             return
-        if len(user_input) > 4:
-            user_input = user_input[-4:]
+        if len(user_input) > (sequence_length - 1):
+            user_input = user_input[-(sequence_length-1):]
         token_ids = t.tensor([[ord(c) for c in user_input]], dtype=t.long).to(
             device
         )
@@ -277,6 +268,6 @@ def run_model(model_path):
 
 
 if __name__ == "__main__":
-    # train_char_predict()
-    # run_model("small_transformer.pth")
+    train_char_predict()
+    run_model("small_transformer.pth")
     calc_influence("small_transformer.pth")
