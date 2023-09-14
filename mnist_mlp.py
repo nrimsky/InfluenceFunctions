@@ -59,8 +59,9 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
     def get_d_w_l(self):
         # Return the gradient of the loss wrt the weights
         w_grad = self.linear.weight.grad
-        b_grad = self.linear.bias.grad
-        return t.cat([w_grad.view(-1), b_grad.view(-1)])
+        b_grad = self.linear.bias.grad.unsqueeze(-1)
+        full_grad = t.cat([w_grad, b_grad], dim=-1)
+        return full_grad
         
 
 

@@ -69,7 +69,7 @@ def compute_lambda_ii(train_grads, q_a, q_s):
     squared_projections_sum = 0
     for j in range(n_examples):
         # Get gradient for the current example and reshape it
-        dtheta = train_grads[j].reshape(q_s.shape[1], q_a.shape[1])
+        dtheta = train_grads[j]
         # Compute projection of dtheta onto the Kronecker product of eigenvectors
         projected = (q_s.T @ dtheta @ q_a).reshape(-1)
         # Square the result and accumulate
@@ -82,10 +82,9 @@ def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads, da
     """Compute EK-FAC inverse Hessian-vector products."""
     ihvp = []
     for i in range(len(query_grads)):
-        q = query_grads[i]
         P = kfac_grad_covs[i].shape[0]
         M = kfac_input_covs[i].shape[0]
-        q = q.reshape((P, M))
+        q = query_grads[i]
         # Performing eigendecompositions on the input and gradient covariance matrices
         q_a, _, q_a_t = t.svd(kfac_input_covs[i])
         q_s, _, q_s_t = t.svd(kfac_grad_covs[i])
@@ -129,7 +128,7 @@ def get_influences(ihvp, train_grads):
     """
     influences = []
     for example_grads in zip(*train_grads):
-        influences.append(t.dot(ihvp, t.cat(example_grads)).item())
+        influences.append(t.dot(ihvp, t.cat([g.view(-1) for g in example_grads])).item())
     return influences
 
 

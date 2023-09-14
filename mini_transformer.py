@@ -111,8 +111,9 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
     def get_d_w_l(self):
         # Return the gradient of the loss wrt the weights
         w_grad = self.linear.weight.grad
-        b_grad = self.linear.bias.grad
-        return t.cat([w_grad.view(-1), b_grad.view(-1)])
+        b_grad = self.linear.bias.grad.unsqueeze(-1)
+        full_grad = t.cat([w_grad, b_grad], dim=-1)
+        return full_grad
 
 
 class TransformerBlock(t.nn.Module):
@@ -212,9 +213,11 @@ def calc_influence(model_path):
         return t.tensor([ord(c) for c in string], dtype=t.long).to(device)
 
     queries = [
-        (encode("m2n3"), encode("o")),
-        (encode("q6r7"), encode("s")),
+        (encode("c2d3"), encode("e")),
+        (encode("6h7i"), encode("8")),
+        (encode("0b1c"), encode("2")),
         (encode("4f5g"), encode("6")),
+        (encode("5g6h"), encode("7")),
     ]
 
     all_top_training_samples, all_top_influences = influence(
