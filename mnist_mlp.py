@@ -46,11 +46,11 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
 
     def get_a_l_minus_1(self):
         # Return the input to the linear layer as a homogenous vector
-        return t.cat([self.input, t.ones((self.input.shape[0], 1)).to(device)], dim=-1)
+        return t.cat([self.input, t.ones((self.input.shape[0], 1)).to(device)], dim=-1).clone().detach()
 
     def get_d_s_l(self):
         # Return the gradient of the loss wrt the output of the linear layer
-        return self.d_s_l
+        return self.d_s_l.clone().detach()
     
     def get_dims(self):
         # Return the dimensions of the weights - (output_dim, input_dim)
@@ -61,7 +61,7 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
         w_grad = self.linear.weight.grad
         b_grad = self.linear.bias.grad.unsqueeze(-1)
         full_grad = t.cat([w_grad, b_grad], dim=-1)
-        return full_grad
+        return full_grad.clone().detach()
         
 
 
@@ -137,7 +137,7 @@ def run_influence(model_path):
     model = MLP(input_dim, output_dim, hidden_dim)
     model.load_state_dict(t.load(model_path))
     model = model.to(device)
-    model.train()
+    model.eval()
 
     train_dataset = datasets.MNIST(
         root="./data", train=True, transform=transform, download=True

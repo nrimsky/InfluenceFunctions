@@ -45,7 +45,6 @@ def get_ekfac_factors_and_train_grads(
     tot = 0
     for data, target in dataset:
         model.zero_grad()
-        model.train()
         data = data.to(device)
         target = target.to(device)
         if len(data.shape) == 1:
@@ -71,15 +70,11 @@ def get_ekfac_factors_and_train_grads(
 def compute_lambda_ii(train_grads, q_a, q_s):
     """Compute Lambda_ii values for a block."""
     n_examples = len(train_grads)
-    squared_projections_sum = 0
+    squared_projections_sum = 0.0
     for j in range(n_examples):
-        # Get gradient for the current example and reshape it
         dtheta = train_grads[j]
-        # Compute projection of dtheta onto the Kronecker product of eigenvectors
-        projected = (q_s.T @ dtheta @ q_a).reshape(-1)
-        # Square the result and accumulate
-        squared_projections_sum += projected ** 2
-    # Compute average over the number of examples
+        result = (q_s @ dtheta @ q_a.T).view(-1)
+        squared_projections_sum += result ** 2
     lambda_ii_avg = squared_projections_sum / n_examples
     return lambda_ii_avg
 
@@ -87,30 +82,24 @@ def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads, da
     """Compute EK-FAC inverse Hessian-vector products."""
     ihvp = []
     for i in range(len(query_grads)):
-        P = kfac_grad_covs[i].shape[0]
-        M = kfac_input_covs[i].shape[0]
         q = query_grads[i]
         # Performing eigendecompositions on the input and gradient covariance matrices
         q_a, _, q_a_t = t.svd(kfac_input_covs[i])
         q_s, _, q_s_t = t.svd(kfac_grad_covs[i])
-        # Compute the diagonal matrix with damped eigenvalues
         lambda_ii = compute_lambda_ii(train_grads[i], q_a, q_s)
-        ekfacDiag_damped_inv = 1.0 / (lambda_ii + damping)
-        # Reshape the inverted diagonal to match the shape of V (reshaped query gradients)
-        reshaped_diag_inv = ekfacDiag_damped_inv.reshape(P, M)
+        ekfacDiag_damped_inv = 1.0 / (lambda_ii + damping) 
+        ekfacDiag_damped_inv = ekfacDiag_damped_inv.reshape((q.shape[0], q.shape[1]))
         intermediate_result = q_s @ (q @ q_a_t)
-        result = intermediate_result / reshaped_diag_inv
+        result = intermediate_result / ekfacDiag_damped_inv
         ihvp_component = q_s_t @ (result @ q_a)
         ihvp.append(ihvp_component.reshape(-1))
     # Concatenating the results across blocks to get the final ihvp
     return t.cat(ihvp)
 
-
 def get_query_grads(
     model, query, target, mlp_blocks: List[InfluenceCalculable], device
 ):
     model.zero_grad()
-    model.train()
     query = query.to(device)
     target = target.to(device)
     if len(query.shape) == 1:

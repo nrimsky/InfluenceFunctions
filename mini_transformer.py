@@ -98,11 +98,11 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
 
     def get_a_l_minus_1(self):
         # Return the input to the linear layer as a homogenous vector (batch_size, seq_len, input_dim + 1)
-        return t.cat([self.input, t.ones((self.input.shape[0], self.input.shape[1], 1)).to(self.input.device)], dim=-1)
+        return t.cat([self.input, t.ones((self.input.shape[0], self.input.shape[1], 1)).to(self.input.device)], dim=-1).clone().detach()
 
     def get_d_s_l(self):
         # Return the gradient of the loss wrt the output of the linear layer
-        return self.d_s_l
+        return self.d_s_l.clone().detach()
     
     def get_dims(self):
         # Return the dimensions of the weights - (output_dim, input_dim)
@@ -113,7 +113,7 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
         w_grad = self.linear.weight.grad
         b_grad = self.linear.bias.grad.unsqueeze(-1)
         full_grad = t.cat([w_grad, b_grad], dim=-1)
-        return full_grad
+        return full_grad.clone().detach()
 
 
 class TransformerBlock(t.nn.Module):
@@ -207,7 +207,7 @@ def calc_influence(model_path):
     model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size)
     model.load_state_dict(t.load(model_path))
     model.to(device)
-    model.train()
+    model.eval()
 
     def encode(string):
         return t.tensor([ord(c) for c in string], dtype=t.long).to(device)
