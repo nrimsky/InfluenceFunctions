@@ -63,7 +63,22 @@ def get_ekfac_factors_and_train_grads(
     return kfac_input_covs, kfac_grad_covs, train_grads
 
 
-def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, damping=0.001):
+def compute_lambda_ii(train_grads, q_a, q_s):
+    """Compute Lambda_ii values for a block."""
+    n_examples = len(train_grads)
+    squared_projections_sum = 0
+    for j in range(n_examples):
+        # Get gradient for the current example and reshape it
+        dtheta = train_grads[j].reshape(q_s.shape[1], q_a.shape[1])
+        # Compute projection of dtheta onto the Kronecker product of eigenvectors
+        projected = (q_s.T @ dtheta @ q_a).reshape(-1)
+        # Square the result and accumulate
+        squared_projections_sum += projected ** 2
+    # Compute average over the number of examples
+    lambda_ii_avg = squared_projections_sum / n_examples
+    return lambda_ii_avg
+
+def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads, damping=0.001):
     """Compute EK-FAC inverse Hessian-vector products."""
     ihvp = []
     for i in range(len(query_grads)):
@@ -72,13 +87,11 @@ def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, damping=0.001):
         M = kfac_input_covs[i].shape[0]
         q = q.reshape((P, M))
         # Performing eigendecompositions on the input and gradient covariance matrices
-        q_a, lambda_a, q_a_t = t.svd(kfac_input_covs[i])
-        q_s, lambda_s, q_s_t = t.svd(kfac_grad_covs[i])
+        q_a, _, q_a_t = t.svd(kfac_input_covs[i])
+        q_s, _, q_s_t = t.svd(kfac_grad_covs[i])
         # Compute the diagonal matrix with damped eigenvalues
-        ekfacDiag = t.outer(
-            lambda_a, lambda_s
-        ).flatten()  # The Kronecker product's eigenvalues
-        ekfacDiag_damped_inv = 1.0 / (ekfacDiag + damping)
+        lambda_ii = compute_lambda_ii(train_grads[i], q_a, q_s)
+        ekfacDiag_damped_inv = 1.0 / (lambda_ii + damping)
         # Reshape the inverted diagonal to match the shape of V (reshaped query gradients)
         reshaped_diag_inv = ekfacDiag_damped_inv.reshape(P, M)
         intermediate_result = q_s @ (q @ q_a_t)
@@ -136,7 +149,7 @@ def influence(
 
     for query, target in test_dataset:
         query_grads = get_query_grads(model, query, target, mlp_blocks, device)
-        ihvp = get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs)
+        ihvp = get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads)
         top_influences = get_influences(ihvp, train_grads)
         top_influences, top_samples = t.topk(t.tensor(top_influences), 10)
         all_top_training_samples.append(top_samples)
