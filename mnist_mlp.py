@@ -139,16 +139,16 @@ def run_influence(model_path):
     model = model.to(device)
     model.eval()
 
-    train_dataset = datasets.MNIST(
+    _train_dataset = datasets.MNIST(
         root="./data", train=True, transform=transform, download=True
     )
     train_subset = t.utils.data.Subset(
-        train_dataset, sample(range(len(train_dataset)), 10000)
+        _train_dataset, sample(range(len(_train_dataset)), 10000)
     )
 
-    test_dataset = datasets.MNIST(root="./data", train=False, transform=transform)
+    _test_dataset = datasets.MNIST(root="./data", train=False, transform=transform)
     test_subset = t.utils.data.Subset(
-        test_dataset, sample(range(len(test_dataset)), 10)
+        _test_dataset, sample(range(len(_test_dataset)), 10)
     )
 
     mlp_blocks = [model.fc1, model.fc2, model.fc3]
@@ -160,7 +160,7 @@ def run_influence(model_path):
     for i, (top_samples, top_influences) in enumerate(
         zip(all_top_training_samples, all_top_influences)
     ):
-        print(f"Query target: {test_dataset[i][1]}")
+        print(f"Query target: {test_subset[i][1]}")
 
         # Prepare a figure for visualization
         plt.clf()
@@ -168,17 +168,17 @@ def run_influence(model_path):
 
         # Display query image
         plt.subplot(1, len(top_samples) + 1, 1)
-        query_img = test_dataset[i][0].view(28, 28)
+        query_img = test_subset[i][0].view(28, 28)
         plt.imshow(query_img, cmap="gray")
-        plt.title(f"Query: {test_dataset[i][1]}")
+        plt.title(f"Query: {test_subset[i][1]}")
         plt.axis("off")
 
         for j, (sample_idx, infl) in enumerate(zip(top_samples, top_influences)):
-            print(f"Sample target {train_dataset[sample_idx][1]}: {infl:.4f}")
+            print(f"Sample target {train_subset[sample_idx][1]}: {infl:.4f}")
 
             # Display influential training image
             plt.subplot(1, len(top_samples) + 1, j + 2)
-            infl_img = train_dataset[sample_idx][0].view(28, 28)
+            infl_img = train_subset[sample_idx][0].view(28, 28)
             plt.imshow(infl_img, cmap="gray")
             plt.title(f"Influence: {infl:.4f}")
             plt.axis("off")

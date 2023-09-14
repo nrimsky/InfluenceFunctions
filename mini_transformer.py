@@ -204,9 +204,9 @@ def train_char_predict():
 
 def calc_influence(model_path):
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
-    train_dataset = CharPredictDataset(length=dataset_length, seq_length=sequence_length)
+    _train_dataset = CharPredictDataset(length=dataset_length, seq_length=sequence_length)
     train_subset = t.utils.data.Subset(
-        train_dataset, sample(range(len(train_dataset)), 100)
+        _train_dataset, sample(range(len(_train_dataset)), 100)
     )
     model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length)
     model.load_state_dict(t.load(model_path))
@@ -214,7 +214,7 @@ def calc_influence(model_path):
     model.eval()
 
     queries = t.utils.data.Subset(
-        train_dataset, sample(range(len(train_dataset)), 10)
+        _train_dataset, sample(range(len(_train_dataset)), 10)
     )
 
     all_top_training_samples, all_top_influences = influence(
