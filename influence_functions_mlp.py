@@ -57,10 +57,10 @@ def get_ekfac_factors_and_pseudo_grads(
         for i, block in enumerate(mlp_blocks):
             grad_cov = t.einsum("...i,...j->ij", block.get_d_s_l(), block.get_d_s_l())
             kfac_grad_covs[i] += grad_cov
-            grads[i].append(block.get_d_w_l().cpu())
+            grads[i].append(block.get_d_w_l())
         tot += 1
-    kfac_input_covs = [A.cpu() / tot for A in kfac_input_covs]
-    kfac_grad_covs = [S.cpu() / tot for S in kfac_grad_covs]
+    kfac_input_covs = [A / tot for A in kfac_input_covs]
+    kfac_grad_covs = [S / tot for S in kfac_grad_covs]
     return kfac_input_covs, kfac_grad_covs, grads
 
 
@@ -78,7 +78,7 @@ def get_grads(model, dataset, mlp_blocks: List[InfluenceCalculable], device):
         loss = t.nn.functional.cross_entropy(output, target)
         loss.backward()
         for i, block in enumerate(mlp_blocks):
-            grads[i].append(block.get_d_w_l().cpu())
+            grads[i].append(block.get_d_w_l())
     return grads
 
 
@@ -121,14 +121,14 @@ def get_ekfac_ihvp(
 
 def get_query_grad(model, query, mlp_blocks: List[InfluenceCalculable], device):
     grads = get_grads(model, [query], mlp_blocks, device)
-    return t.cat([q[0].view(-1) for q in grads]).cpu()
+    return t.cat([q[0].view(-1) for q in grads])
 
 
 def get_influences(ihvp, query_grad):
     """
     Compute influences using precomputed iHVP and query_grad
     """
-    return -1 * t.einsum("ij,j->i", ihvp, query_grad)
+    return -1 * t.einsum("j,ij->i", query_grad, ihvp)
 
 
 def influence(

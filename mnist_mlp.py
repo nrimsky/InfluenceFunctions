@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # Define the hyperparameters
 batch_size = 128
 learning_rate = 0.001
-num_epochs = 50
+num_epochs = 20
 hidden_dim = 64
 input_dim = 28 * 28
 output_dim = 10
@@ -140,16 +140,11 @@ def train_model():
     return model, train_dataset, test_dataset
 
 
-def run_influence(model_path):
+def run_influence(model_path, n_queries, gradient_fitting_dataset_size, search_dataset_size):
     model = MLP(input_dim, output_dim, hidden_dim)
     model.load_state_dict(t.load(model_path))
     model = model.to(device)
     model.eval()
-
-    n_queries = 10
-    gradient_fitting_dataset_size = 2000
-    search_dataset_size = 2000
-
     train_dataset = datasets.MNIST(
         root="./data", train=True, transform=transform, download=True
     )
@@ -197,4 +192,4 @@ def run_influence(model_path):
 
 if __name__ == "__main__":
     # train_model()
-    run_influence("model.ckpt")
+    run_influence("model.ckpt", 1, 300, 1000)

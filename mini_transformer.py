@@ -233,10 +233,10 @@ def calc_influence(model_path):
     model.to(device)
     model.eval()
 
-    topk = 3
+    topk = 10
     queries = dataset_sample(train_dataset, 5)
-    gradient_fitting_data = dataset_sample(train_dataset, 195)
-    search_data = dataset_sample(train_dataset, 195)
+    gradient_fitting_data = dataset_sample(train_dataset, len(train_dataset))
+    search_data = dataset_sample(train_dataset, len(train_dataset))
 
     all_top_training_samples, all_top_influences = influence(
         model,
