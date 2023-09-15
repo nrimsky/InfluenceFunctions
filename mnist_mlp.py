@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 # Define the hyperparameters
 batch_size = 128
 learning_rate = 0.001
-num_epochs = 30
+num_epochs = 50
 hidden_dim = 64
 input_dim = 28 * 28
 output_dim = 10
@@ -22,6 +22,9 @@ transform = transforms.Compose(
     ]
 )
 
+def dataset_sample(dataset, n_samples):
+    indices = sample(range(len(dataset)), n_samples)
+    return [dataset[i] for i in indices]
 
 class MLPBlock(InfluenceCalculable, t.nn.Module):
     def __init__(self, input_dim, output_dim, use_relu=True):
@@ -143,28 +146,29 @@ def run_influence(model_path):
     model = model.to(device)
     model.eval()
 
-    _train_dataset = datasets.MNIST(
+    n_queries = 10
+    gradient_fitting_dataset_size = 2000
+    search_dataset_size = 3000
+
+    train_dataset = datasets.MNIST(
         root="./data", train=True, transform=transform, download=True
     )
-    train_subset = t.utils.data.Subset(
-        _train_dataset, sample(range(len(_train_dataset)), 10000)
-    )
+    test_dataset = datasets.MNIST(root="./data", train=False, transform=transform)
 
-    _test_dataset = datasets.MNIST(root="./data", train=False, transform=transform)
-    test_subset = t.utils.data.Subset(
-        _test_dataset, sample(range(len(_test_dataset)), 10)
-    )
+    queries = dataset_sample(test_dataset, n_queries)
+    gradient_fitting_data = dataset_sample(test_dataset, gradient_fitting_dataset_size)
+    search_data = dataset_sample(train_dataset, search_dataset_size)
 
     mlp_blocks = [model.fc1, model.fc2, model.fc3]
 
     all_top_training_samples, all_top_influences = influence(
-        model, mlp_blocks, test_subset, train_subset, device
+        model, mlp_blocks, queries, gradient_fitting_data, search_data, device
     )
 
     for i, (top_samples, top_influences) in enumerate(
         zip(all_top_training_samples, all_top_influences)
     ):
-        print(f"Query target: {test_subset[i][1]}")
+        print(f"Query target: {queries[i][1]}")
 
         # Prepare a figure for visualization
         plt.clf()
@@ -172,17 +176,17 @@ def run_influence(model_path):
 
         # Display query image
         plt.subplot(1, len(top_samples) + 1, 1)
-        query_img = test_subset[i][0].view(28, 28)
+        query_img = queries[i][0].view(28, 28)
         plt.imshow(query_img, cmap="gray")
-        plt.title(f"Query: {test_subset[i][1]}")
+        plt.title(f"Query: {queries[i][1]}")
         plt.axis("off")
 
         for j, (sample_idx, infl) in enumerate(zip(top_samples, top_influences)):
-            print(f"Sample target {train_subset[sample_idx][1]}: {infl:.4f}")
+            print(f"Sample target {search_data[sample_idx][1]}: {infl:.4f}")
 
             # Display influential training image
             plt.subplot(1, len(top_samples) + 1, j + 2)
-            infl_img = train_subset[sample_idx][0].view(28, 28)
+            infl_img = search_data[sample_idx][0].view(28, 28)
             plt.imshow(infl_img, cmap="gray")
             plt.title(f"Influence: {infl:.8f}")
             plt.axis("off")

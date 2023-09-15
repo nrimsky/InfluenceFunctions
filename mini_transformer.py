@@ -15,8 +15,11 @@ vocab_size = 128
 dataset_length = 200
 sequence_length = 5
 lr = 0.001
-n_epochs = 1000
+n_epochs = 5000
 
+def dataset_sample(dataset, n_samples):
+    indices = sample(range(len(dataset)), n_samples)
+    return [dataset[i] for i in indices]
 
 def autoregressive_loss(output, target):
     output = einops.rearrange(output, "b s v -> (b s) v")
@@ -32,9 +35,9 @@ class CharPredictDataset(Dataset):
 
     def _generate_data(self, length):
         alphabets = string.ascii_lowercase
-        numbers = [str(i % 10) for i in range(length//2)]
+        numbers = [str(i % 10) for i in range(length // 2)]
         return "".join(
-            [alphabets[i % len(alphabets)] + numbers[i] for i in range(length//2)]
+            [alphabets[i % len(alphabets)] + numbers[i] for i in range(length // 2)]
         )
 
     def __len__(self):
@@ -230,18 +233,17 @@ def calc_influence(model_path):
     model.to(device)
     model.eval()
 
-
     topk = 3
-    train_data = []
-    for i in range(len(train_dataset)):
-        train_data.append(train_dataset[i])
-    queries = sample(train_data, 5)
+    queries = dataset_sample(train_dataset, 5)
+    gradient_fitting_data = dataset_sample(train_dataset, 195)
+    search_data = dataset_sample(train_dataset, 195)
 
     all_top_training_samples, all_top_influences = influence(
         model,
         [b.mlp for b in model.blocks],
         queries,
-        train_data,
+        gradient_fitting_data,
+        search_data,
         topk,
         device,
     )
@@ -260,7 +262,7 @@ def calc_influence(model_path):
         for s, i in zip(top_samples, top_influences):
             s = s.item()
             print(
-                f"{decode(train_data[s][0])[0]}{decode(train_data[s][1])} Influence: {i}"
+                f"{decode(search_data[s][0])[0]}{decode(search_data[s][1])} Influence: {i}"
             )
 
 
