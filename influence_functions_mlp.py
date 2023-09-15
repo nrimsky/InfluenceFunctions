@@ -33,8 +33,7 @@ def get_ekfac_factors_and_train_grads(
         for b in mlp_blocks
     ]
     kfac_grad_covs = [
-        t.zeros((b.get_dims()[0], b.get_dims()[0])).to(device)
-        for b in mlp_blocks
+        t.zeros((b.get_dims()[0], b.get_dims()[0])).to(device) for b in mlp_blocks
     ]
     train_grads = [[] for _ in range(len(mlp_blocks))]
     tot = 0
@@ -49,7 +48,9 @@ def get_ekfac_factors_and_train_grads(
         output = model(data)
         loss = t.nn.functional.cross_entropy(output, target)
         for i, block in enumerate(mlp_blocks):
-            input_cov = t.einsum("...i,...j->ij", block.get_a_l_minus_1(), block.get_a_l_minus_1())
+            input_cov = t.einsum(
+                "...i,...j->ij", block.get_a_l_minus_1(), block.get_a_l_minus_1()
+            )
             kfac_input_covs[i] += input_cov
         loss.backward()
         for i, block in enumerate(mlp_blocks):
@@ -69,11 +70,14 @@ def compute_lambda_ii(train_grads, q_a, q_s):
     for j in range(n_examples):
         dtheta = train_grads[j]
         result = (q_s @ dtheta @ q_a.T).view(-1)
-        squared_projections_sum += result ** 2
+        squared_projections_sum += result**2
     lambda_ii_avg = squared_projections_sum / n_examples
     return lambda_ii_avg
 
-def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads, damping=0.001):
+
+def get_ekfac_ihvp(
+    query_grads, kfac_input_covs, kfac_grad_covs, train_grads, damping=0.001
+):
     """Compute EK-FAC inverse Hessian-vector products."""
     ihvp = []
     for i in range(len(query_grads)):
@@ -82,7 +86,7 @@ def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads, da
         q_a, _, q_a_t = t.svd(kfac_input_covs[i])
         q_s, _, q_s_t = t.svd(kfac_grad_covs[i])
         lambda_ii = compute_lambda_ii(train_grads[i], q_a, q_s)
-        ekfacDiag_damped_inv = 1.0 / (lambda_ii + damping) 
+        ekfacDiag_damped_inv = 1.0 / (lambda_ii + damping)
         ekfacDiag_damped_inv = ekfacDiag_damped_inv.reshape((q.shape[0], q.shape[1]))
         intermediate_result = q_s @ (q @ q_a_t)
         result = intermediate_result / ekfacDiag_damped_inv
@@ -90,6 +94,7 @@ def get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads, da
         ihvp.append(ihvp_component.reshape(-1))
     # Concatenating the results across blocks to get the final ihvp
     return t.cat(ihvp)
+
 
 def get_query_grads(
     model, query, target, mlp_blocks: List[InfluenceCalculable], device
@@ -117,7 +122,9 @@ def get_influences(ihvp, train_grads):
     """
     influences = []
     for example_grads in zip(*train_grads):
-        influences.append(t.dot(ihvp, t.cat([g.view(-1) for g in example_grads])).item())
+        influences.append(
+            t.dot(ihvp, t.cat([g.view(-1) for g in example_grads])).item()
+        )
     return influences
 
 

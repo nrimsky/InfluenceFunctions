@@ -11,8 +11,8 @@ batch_size = 128
 learning_rate = 0.001
 num_epochs = 30
 hidden_dim = 64
-input_dim = 28 * 28  
-output_dim = 10 
+input_dim = 28 * 28
+output_dim = 10
 device = t.device("cuda" if t.cuda.is_available() else "cpu")
 transform = transforms.Compose(
     [
@@ -32,9 +32,11 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
         self.use_relu = use_relu
         self.d_s_l = None
         self.d_w_l = None
+
         # Save gradient of loss wrt output of linear layer (Ds_l, where s_l = self.linear(a_l_minus_1))
         def hook_fn(module, grad_input, grad_output):
             self.d_s_l = grad_output[0]
+
         self.linear.register_full_backward_hook(hook_fn)
 
     def forward(self, x):
@@ -46,23 +48,26 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
 
     def get_a_l_minus_1(self):
         # Return the input to the linear layer as a homogenous vector
-        return t.cat([self.input, t.ones((self.input.shape[0], 1)).to(device)], dim=-1).clone().detach()
+        return (
+            t.cat([self.input, t.ones((self.input.shape[0], 1)).to(device)], dim=-1)
+            .clone()
+            .detach()
+        )
 
     def get_d_s_l(self):
         # Return the gradient of the loss wrt the output of the linear layer
         return self.d_s_l.clone().detach()
-    
+
     def get_dims(self):
         # Return the dimensions of the weights - (output_dim, input_dim)
         return self.linear.weight.shape
-    
+
     def get_d_w_l(self):
         # Return the gradient of the loss wrt the weights
         w_grad = self.linear.weight.grad
         b_grad = self.linear.bias.grad.unsqueeze(-1)
         full_grad = t.cat([w_grad, b_grad], dim=-1)
         return full_grad.clone().detach()
-        
 
 
 class MLP(t.nn.Module):
@@ -101,7 +106,7 @@ def train_model():
         total_loss = 0
         for data, target in tqdm(train_loader):
             data, target = data.to(device), target.to(device)
-            optimizer.zero_grad()  
+            optimizer.zero_grad()
             output = model(data)
             loss = criterion(output, target)
             loss.backward()
@@ -130,7 +135,6 @@ def train_model():
     t.save(model.state_dict(), "model.ckpt")
 
     return model, train_dataset, test_dataset
-
 
 
 def run_influence(model_path):
@@ -180,11 +184,12 @@ def run_influence(model_path):
             plt.subplot(1, len(top_samples) + 1, j + 2)
             infl_img = train_subset[sample_idx][0].view(28, 28)
             plt.imshow(infl_img, cmap="gray")
-            plt.title(f"Influence: {infl:.4f}")
+            plt.title(f"Influence: {infl:.8f}")
             plt.axis("off")
 
         plt.tight_layout()
         plt.savefig(f"results_{i}.png")
+
 
 if __name__ == "__main__":
     # train_model()

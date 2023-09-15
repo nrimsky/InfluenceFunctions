@@ -7,14 +7,14 @@ import string
 from influence_functions_transformer import influence, InfluenceCalculable
 from random import sample
 
-d_model = 40
-n_heads = 4
-d_mlp = 128
+d_model = 16
+n_heads = 2
+d_mlp = 32
 n_layers = 2
 vocab_size = 128
-dataset_length = 100
+dataset_length = 200
 sequence_length = 5
-lr = 0.002
+lr = 0.001
 n_epochs = 1000
 
 
@@ -32,17 +32,19 @@ class CharPredictDataset(Dataset):
 
     def _generate_data(self, length):
         alphabets = string.ascii_lowercase
-        numbers = [str(i % 10) for i in range(length)]
-        return "".join([alphabets[i%len(alphabets)] + numbers[i] for i in range(length)])
+        numbers = [str(i % 10) for i in range(length//2)]
+        return "".join(
+            [alphabets[i % len(alphabets)] + numbers[i] for i in range(length//2)]
+        )
 
     def __len__(self):
         return len(self.data) - self.seq_length
 
     def __getitem__(self, idx):
         source_seq = self.data[idx : idx + self.seq_length]
-        return t.tensor(
-            [ord(c) for c in source_seq[:-1]], dtype=t.long
-        ), t.tensor([ord(c) for c in source_seq[1:]], dtype=t.long)
+        return t.tensor([ord(c) for c in source_seq[:-1]], dtype=t.long), t.tensor(
+            [ord(c) for c in source_seq[1:]], dtype=t.long
+        )
 
 
 class MultiHeadMaskedAttention(t.nn.Module):
@@ -85,9 +87,11 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
         self.relu = t.nn.ReLU()
         self.linear2 = t.nn.Linear(hidden_dim, output_dim)
         self.input = None
+
         # Save gradient of loss wrt output of linear layer (Ds_l, where s_l = self.linear(a_l_minus_1))
         def hook_fn(module, grad_input, grad_output):
             self.d_s_l = grad_output[0]
+
         self.linear.register_full_backward_hook(hook_fn)
 
     def forward(self, x):
@@ -99,16 +103,28 @@ class MLPBlock(InfluenceCalculable, t.nn.Module):
 
     def get_a_l_minus_1(self):
         # Return the input to the linear layer as a homogenous vector (batch_size, seq_len, input_dim + 1)
-        return t.cat([self.input, t.ones((self.input.shape[0], self.input.shape[1], 1)).to(self.input.device)], dim=-1).clone().detach()
+        return (
+            t.cat(
+                [
+                    self.input,
+                    t.ones((self.input.shape[0], self.input.shape[1], 1)).to(
+                        self.input.device
+                    ),
+                ],
+                dim=-1,
+            )
+            .clone()
+            .detach()
+        )
 
     def get_d_s_l(self):
         # Return the gradient of the loss wrt the output of the linear layer
         return self.d_s_l.clone().detach()
-    
+
     def get_dims(self):
         # Return the dimensions of the weights - (output_dim, input_dim)
         return self.linear.weight.shape
-    
+
     def get_d_w_l(self):
         # Return the gradient of the loss wrt the weights
         w_grad = self.linear.weight.grad
@@ -204,24 +220,29 @@ def train_char_predict():
 
 def calc_influence(model_path):
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
-    _train_dataset = CharPredictDataset(length=dataset_length, seq_length=sequence_length)
-    train_subset = t.utils.data.Subset(
-        _train_dataset, sample(range(len(_train_dataset)), 100)
+    train_dataset = CharPredictDataset(
+        length=dataset_length, seq_length=sequence_length
     )
-    model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length)
+    model = DecoderTransformer(
+        d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length
+    )
     model.load_state_dict(t.load(model_path))
     model.to(device)
     model.eval()
 
-    queries = t.utils.data.Subset(
-        _train_dataset, sample(range(len(_train_dataset)), 10)
-    )
+
+    topk = 3
+    train_data = []
+    for i in range(len(train_dataset)):
+        train_data.append(train_dataset[i])
+    queries = sample(train_data, 5)
 
     all_top_training_samples, all_top_influences = influence(
         model,
         [b.mlp for b in model.blocks],
         queries,
-        train_subset,
+        train_data,
+        topk,
         device,
     )
 
@@ -234,17 +255,19 @@ def calc_influence(model_path):
     for i, (top_samples, top_influences) in enumerate(
         zip(all_top_training_samples, all_top_influences)
     ):
-        print(f"Query: Input {decode(queries[i][0])} Target: {decode(queries[i][1])}")
-        print("Top 10 training samples and their influences:")
+        print(f"Query: {decode(queries[i][0])[0]}{decode(queries[i][1])}")
+        print(f"Top {topk} training samples and their influences:")
         for s, i in zip(top_samples, top_influences):
             s = s.item()
             print(
-                f"Sample: {decode(train_subset[s][0])} {decode(train_subset[s][1])} Influence: {i}"
+                f"{decode(train_data[s][0])[0]}{decode(train_data[s][1])} Influence: {i}"
             )
 
 
 def run_model(model_path):
-    model = DecoderTransformer(d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length)
+    model = DecoderTransformer(
+        d_model, n_heads, d_mlp, n_layers, vocab_size, sequence_length
+    )
     model.load_state_dict(t.load(model_path))
 
     model.eval()
@@ -256,10 +279,8 @@ def run_model(model_path):
         if user_input == "exit":
             return
         if len(user_input) > (sequence_length - 1):
-            user_input = user_input[-(sequence_length-1):]
-        token_ids = t.tensor([[ord(c) for c in user_input]], dtype=t.long).to(
-            device
-        )
+            user_input = user_input[-(sequence_length - 1) :]
+        token_ids = t.tensor([[ord(c) for c in user_input]], dtype=t.long).to(device)
         model_output = model(token_ids)
         last_token = model_output[0, -1, :]
         topk = t.topk(last_token, 1)
@@ -268,6 +289,6 @@ def run_model(model_path):
 
 
 if __name__ == "__main__":
-    train_char_predict()
-    run_model("small_transformer.pth")
+    #train_char_predict()
+    #run_model("small_transformer.pth")
     calc_influence("small_transformer.pth")
