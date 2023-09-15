@@ -82,31 +82,33 @@ def compute_lambda_ii(train_grads, q_a, q_s):
     return lambda_ii_avg
 
 
-def get_ekfac_ihvp(
-    query_grads, kfac_input_covs, kfac_grad_covs, train_grads, damping=0.001
-):
+def get_ekfac_ihvp(kfac_input_covs, kfac_grad_covs, train_grads, damping=0.001):
     """Compute EK-FAC inverse Hessian-vector products."""
     ihvp = []
-    for i in range(len(query_grads)):
-        q = query_grads[i]
+    for i in range(len(train_grads)):
+        V = train_grads[i]
+        stacked = t.stack(V)
         # Performing eigendecompositions on the input and gradient covariance matrices
         q_a, _, q_a_t = t.svd(kfac_input_covs[i])
         q_s, _, q_s_t = t.svd(kfac_grad_covs[i])
         lambda_ii = compute_lambda_ii(train_grads[i], q_a, q_s)
         ekfacDiag_damped_inv = 1.0 / (lambda_ii + damping)
-        ekfacDiag_damped_inv = ekfacDiag_damped_inv.reshape((q.shape[0], q.shape[1]))
-        intermediate_result = q_s @ (q @ q_a_t)
-        result = intermediate_result / ekfacDiag_damped_inv
-        ihvp_component = q_s_t @ (result @ q_a)
-        ihvp.append(ihvp_component.reshape(-1))
+        ekfacDiag_damped_inv = ekfacDiag_damped_inv.reshape((stacked.shape[-2], stacked.shape[-1]))
+        intermediate_result = t.einsum("bij,jk->bik", stacked, q_a_t)
+        intermediate_result = t.einsum("ji,bik->bjk", q_s, intermediate_result)
+        result = intermediate_result / ekfacDiag_damped_inv.unsqueeze(0)
+        ihvp_component = t.einsum("bij,jk->bik", result, q_a)
+        ihvp_component = t.einsum("ji,bik->bjk", q_s_t, ihvp_component)
+        # flattening the result except for the batch dimension
+        ihvp_component = einops.rearrange(ihvp_component, "b j k -> b (j k)")
+        ihvp.append(ihvp_component)
     # Concatenating the results across blocks to get the final ihvp
-    return t.cat(ihvp)
+    return t.cat(ihvp, dim=-1)
 
 
 def get_query_grads(
     model, query, target, mlp_blocks: List[InfluenceCalculable], device
 ):
-    model.zero_grad()
     query = query.to(device)
     target = target.to(device)
     if len(query.shape) == 1:
@@ -115,24 +117,20 @@ def get_query_grads(
         target = target.unsqueeze(0)
     output = model(query)
     loss = autoregressive_loss(output, target)
+    model.zero_grad()
     loss.backward()
     grads = []
     for block in mlp_blocks:
         grads.append(block.get_d_w_l())
-    return grads
+    return t.stack(grads)
 
 
-def get_influences(ihvp, train_grads):
+def get_influences(ihvp, query_grads):
     """
     Compute influences using precomputed ihvp and train_grads.
     """
-    influences = []
-    for example_grads in zip(*train_grads):
-        influences.append(
-            t.dot(ihvp, t.cat([g.view(-1) for g in example_grads])).item()
-        )
-    return influences
-
+    query_grads = query_grads.view(-1)
+    return t.einsum("ij,j->i", ihvp, query_grads)
 
 def influence(
     model,
@@ -151,9 +149,9 @@ def influence(
 
     for query, target in test_dataset:
         query_grads = get_query_grads(model, query, target, mlp_blocks, device)
-        ihvp = get_ekfac_ihvp(query_grads, kfac_input_covs, kfac_grad_covs, train_grads)
-        top_influences = get_influences(ihvp, train_grads)
-        top_influences, top_samples = t.topk(t.tensor(top_influences), topk)
+        ihvp = get_ekfac_ihvp(kfac_input_covs, kfac_grad_covs, train_grads)
+        top_influences = get_influences(ihvp, query_grads)
+        top_influences, top_samples = t.topk(top_influences, topk)
         all_top_training_samples.append(top_samples)
         all_top_influences.append(top_influences)
 
