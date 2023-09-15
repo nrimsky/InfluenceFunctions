@@ -100,7 +100,7 @@ def compute_lambda_ii(train_grads, q_a, q_s):
 
 
 def get_ekfac_ihvp(
-    kfac_input_covs, kfac_grad_covs, pseudo_grads, search_grads, damping=0.0001
+    kfac_input_covs, kfac_grad_covs, pseudo_grads, search_grads, damping=0.001
 ):
     """Compute EK-FAC inverse Hessian-vector products."""
     ihvp = []

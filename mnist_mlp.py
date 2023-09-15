@@ -148,7 +148,7 @@ def run_influence(model_path):
 
     n_queries = 10
     gradient_fitting_dataset_size = 2000
-    search_dataset_size = 3000
+    search_dataset_size = 2000
 
     train_dataset = datasets.MNIST(
         root="./data", train=True, transform=transform, download=True
@@ -156,7 +156,7 @@ def run_influence(model_path):
     test_dataset = datasets.MNIST(root="./data", train=False, transform=transform)
 
     queries = dataset_sample(test_dataset, n_queries)
-    gradient_fitting_data = dataset_sample(test_dataset, gradient_fitting_dataset_size)
+    gradient_fitting_data = dataset_sample(train_dataset, gradient_fitting_dataset_size)
     search_data = dataset_sample(train_dataset, search_dataset_size)
 
     mlp_blocks = [model.fc1, model.fc2, model.fc3]
